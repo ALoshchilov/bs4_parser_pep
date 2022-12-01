@@ -2,18 +2,18 @@ import logging
 import re
 from urllib.parse import urljoin
 
-from bs4 import BeautifulSoup
 import requests_cache
+from bs4 import BeautifulSoup
+from collections import defaultdict
 from tqdm import tqdm
 
 from configs import configure_argument_parser, configure_logging
 from constants import BASE_DIR, EXPECTED_STATUS, MAIN_DOC_URL, MAIN_PEP_URL
-from messages import (
-    ARGS_INFO, DOWNLOAD_SUCCESS, EMPTY_RESPONSE_ERROR, NOTHING_FOUND,
-    PARSER_FINISHED, PARSER_STARTED, STATUS_NOT_MATCH, UNKNOWN_STATUS
-)
+from messages import (ARGS_INFO, DOWNLOAD_SUCCESS, EMPTY_RESPONSE_ERROR,
+                      LAST_FRONTIER_ERROR, NOTHING_FOUND, PARSER_FINISHED,
+                      PARSER_STARTED, STATUS_NOT_MATCH, UNKNOWN_STATUS)
 from outputs import control_output
-from utils import get_response, find_tag
+from utils import find_tag, get_response
 
 
 def get_soup(session, url, features='lxml'):
@@ -29,14 +29,8 @@ def whats_new(
     output_headers=('Ссылка на статью', 'Заголовок', 'Редактор, Автор')
 ):
     whats_new_url = urljoin(MAIN_DOC_URL, rel_url)
-    main_div = find_tag(
-       get_soup(session, whats_new_url),
-       'section',
-       attrs={'id': 'what-s-new-in-python'}
-    )
-    div_with_ul = find_tag(main_div, 'div', attrs={'class': 'toctree-wrapper'})
-    sections_by_python = div_with_ul.find_all(
-        'li', attrs={'class': 'toctree-l1'}
+    sections_by_python = get_soup(session, whats_new_url).select(
+        '#what-s-new-in-python div.toctree-wrapper:first-of-type li.toctree-l1'
     )
     results = [output_headers]
     for section in tqdm(sections_by_python):
@@ -89,16 +83,12 @@ def download(
     rel_path='downloads'
 ):
     downloads_url = urljoin(MAIN_DOC_URL, rel_url)
-    downloads_dir = BASE_DIR / rel_path
-    main_tag = find_tag(
-        get_soup(session, downloads_url), 'div', attrs={'role': 'main'}
-    )
-    table_tag = find_tag(main_tag, 'table', attrs={'class': 'docutils'})
-    pdf_a4_tag = find_tag(
-        table_tag, 'a', {'href': re.compile(r'.+pdf-a4\.zip$')}
+    pdf_a4_tag = get_soup(session, downloads_url).select_one(
+        'table.docutils a[href$="-pdf-a4.zip"]'
     )
     archive_url = urljoin(downloads_url, pdf_a4_tag['href'])
     filename = archive_url.split('/')[-1]
+    downloads_dir = BASE_DIR / rel_path
     downloads_dir.mkdir(exist_ok=True)
     archive_path = downloads_dir / filename
     response = get_response(session, downloads_url)
@@ -119,8 +109,7 @@ def pep(
     )
     tbody_tag = find_tag(numerical_idx_tag, 'tbody')
     tr_tags = tbody_tag.find_all('tr')
-
-    results = {}
+    results = defaultdict(lambda: 0)
     messages = []
     for tr in tqdm(tr_tags):
         status_key = find_tag(tr, 'td').text[1:]
@@ -139,15 +128,13 @@ def pep(
                     expected_status=expected_status
                 )
             )
-        results[actual_status] = results.get(actual_status, 0) + 1
+        results[actual_status] += 1
     for message in messages:
         logging.info(message)
-    results = list(results.items())
-    # results.append(('Total', len(results)))
     return (
         output_headers,
-        results,
-        ('Total', len(results))
+        *results.items(),
+        ('Total', sum(results.values()))
     )
 
 
@@ -160,19 +147,25 @@ MODE_TO_FUNCTION = {
 
 
 def main():
-    configure_logging()
-    logging.info(PARSER_STARTED)
-    arg_parser = configure_argument_parser(MODE_TO_FUNCTION.keys())
-    args = arg_parser.parse_args()
-    logging.info(ARGS_INFO.format(args=args))
-    session = requests_cache.CachedSession()
-    if args.clear_cache:
-        session.cache.clear()
-    parser_mode = args.mode
-    results = MODE_TO_FUNCTION[parser_mode](session)
-    if results is not None:
-        control_output(results, args)
-    logging.info(PARSER_FINISHED)
+    try:
+        configure_logging()
+        logging.info(PARSER_STARTED)
+        arg_parser = configure_argument_parser(MODE_TO_FUNCTION.keys())
+        args = arg_parser.parse_args()
+        logging.info(ARGS_INFO.format(args=args))
+        session = requests_cache.CachedSession()
+        if args.clear_cache:
+            session.cache.clear()
+        parser_mode = args.mode
+        results = MODE_TO_FUNCTION[parser_mode](session)
+        if results is not None:
+            control_output(results, args)
+        logging.info(PARSER_FINISHED)
+    except Exception as error:
+        error_message = LAST_FRONTIER_ERROR.format(
+            error=error
+        )
+        logging.exception(error_message)
 
 
 if __name__ == '__main__':

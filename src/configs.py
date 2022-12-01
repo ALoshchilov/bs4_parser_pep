@@ -3,7 +3,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 
 from constants import (
-    FILE, LOG_DATETIME_FORMAT, LOG_FORMAT, log_dir, log_file, PRETTY
+    FILE, LOG_DATETIME_FORMAT, LOG_FORMAT, LOG_DIR, LOG_FILE, PRETTY
 )
 
 
@@ -31,9 +31,9 @@ def configure_argument_parser(available_modes):
 
 
 def configure_logging():
-    log_dir.mkdir(exist_ok=True)
+    LOG_DIR.mkdir(exist_ok=True)
     rotating_handler = RotatingFileHandler(
-        log_file, maxBytes=10 ** 6, backupCount=5
+        LOG_FILE, maxBytes=10 ** 6, backupCount=5
     )
     logging.basicConfig(
         datefmt=LOG_DATETIME_FORMAT,
