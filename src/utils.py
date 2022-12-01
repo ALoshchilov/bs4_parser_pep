@@ -21,7 +21,7 @@ def get_response(session, url):
 def find_tag(soup, tag=None, attrs=None, text=None):
     searched_tag = soup.find(tag, attrs=(attrs or {}), text=text)
     if searched_tag is None:
-        error_msg = TAG_NOT_FOUND.format(tag=tag, attrs=attrs)
-        logging.error(error_msg, stack_info=True)
-        raise ParserFindTagException(error_msg)
+        error_message = TAG_NOT_FOUND.format(tag=tag, attrs=attrs)
+        logging.error(error_message, stack_info=True)
+        raise ParserFindTagException(error_message)
     return searched_tag

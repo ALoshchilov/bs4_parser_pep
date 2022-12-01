@@ -9,11 +9,18 @@ from tqdm import tqdm
 from configs import configure_argument_parser, configure_logging
 from constants import BASE_DIR, EXPECTED_STATUS, MAIN_DOC_URL, MAIN_PEP_URL
 from messages import (
-    ARGS_INFO, DOWNLOAD_SUCCESS, NOTHING_FOUND, PARSER_FINISHED,
-    PARSER_STARTED, STATUS_NOT_MATCH, UNKNOWN_STATUS
+    ARGS_INFO, DOWNLOAD_SUCCESS, EMPTY_RESPONSE_ERROR, NOTHING_FOUND,
+    PARSER_FINISHED, PARSER_STARTED, STATUS_NOT_MATCH, UNKNOWN_STATUS
 )
 from outputs import control_output
 from utils import get_response, find_tag
+
+
+def get_soup(session, url, features='lxml'):
+    response = get_response(session, url)
+    if response is None:
+        raise ValueError(EMPTY_RESPONSE_ERROR.format(url=url))
+    return BeautifulSoup(response.text, features)
 
 
 def whats_new(
@@ -22,11 +29,11 @@ def whats_new(
     output_headers=('Ссылка на статью', 'Заголовок', 'Редактор, Автор')
 ):
     whats_new_url = urljoin(MAIN_DOC_URL, rel_url)
-    response = get_response(session, whats_new_url)
-    if response is None:
-        return
-    soup = BeautifulSoup(response.text, 'lxml')
-    main_div = find_tag(soup, 'section', attrs={'id': 'what-s-new-in-python'})
+    main_div = find_tag(
+       get_soup(session, whats_new_url),
+       'section',
+       attrs={'id': 'what-s-new-in-python'}
+    )
     div_with_ul = find_tag(main_div, 'div', attrs={'class': 'toctree-wrapper'})
     sections_by_python = div_with_ul.find_all(
         'li', attrs={'class': 'toctree-l1'}
@@ -36,43 +43,43 @@ def whats_new(
         version_a_tag = section.find('a')
         href = version_a_tag['href']
         version_link = urljoin(whats_new_url, href)
-        response = get_response(session, version_link)
-        soup = BeautifulSoup(response.text, 'lxml')
-        h1 = find_tag(soup, 'h1')
-        dl = find_tag(soup, 'dl')
-        dl_text = dl.text.replace('\n', ' ')
-        results.append((version_link, h1.text, dl_text))
-        return results
+        soup = get_soup(session, version_link)
+        results.append(
+            (
+                version_link,
+                find_tag(soup, 'h1').text,
+                find_tag(soup, 'dl').text.replace('\n', ' ')
+            )
+        )
+    return results
 
 
 def latest_versions(
     session,
     output_headers=('Ссылка на документацию', 'Версия', 'Статус')
 ):
-    response = get_response(session, MAIN_DOC_URL)
-    if response is None:
-        return
-    soup = BeautifulSoup(response.text, 'lxml')
-    sidebar = find_tag(soup, 'div', attrs={'class': 'sphinxsidebarwrapper'})
+    sidebar = find_tag(
+        get_soup(session, MAIN_DOC_URL),
+        'div',
+        attrs={'class': 'sphinxsidebarwrapper'}
+    )
     ul_tags = sidebar.find_all('ul')
     for ul in ul_tags:
         if 'All version' in ul.text:
             a_tags = ul.find_all('a')
             break
     else:
-        raise Exception(NOTHING_FOUND)
+        raise ValueError(NOTHING_FOUND)
     results = [output_headers]
     pattern = r'Python (?P<version>\d\.\d+) \((?P<status>.*)\)'
     for a_tag in a_tags:
-        link = a_tag['href']
-        print(link)
         text_match = re.search(pattern, a_tag.text)
         if text_match is not None:
             version, status = text_match.groups()
         else:
             version, status = a_tag.text, ''
 
-        results.append((link, version, status))
+        results.append((a_tag['href'], version, status))
     return results
 
 
@@ -83,11 +90,9 @@ def download(
 ):
     downloads_url = urljoin(MAIN_DOC_URL, rel_url)
     downloads_dir = BASE_DIR / rel_path
-    response = get_response(session, downloads_url)
-    if response is None:
-        return
-    soup = BeautifulSoup(response.text, 'lxml')
-    main_tag = find_tag(soup, 'div', attrs={'role': 'main'})
+    main_tag = find_tag(
+        get_soup(session, downloads_url), 'div', attrs={'role': 'main'}
+    )
     table_tag = find_tag(main_tag, 'table', attrs={'class': 'docutils'})
     pdf_a4_tag = find_tag(
         table_tag, 'a', {'href': re.compile(r'.+pdf-a4\.zip$')}
@@ -95,7 +100,6 @@ def download(
     archive_url = urljoin(downloads_url, pdf_a4_tag['href'])
     filename = archive_url.split('/')[-1]
     downloads_dir.mkdir(exist_ok=True)
-
     archive_path = downloads_dir / filename
     response = get_response(session, downloads_url)
     if response is None:
@@ -110,30 +114,25 @@ def pep(
     pep_url=MAIN_PEP_URL,
     output_headers=('Статус', 'Количество')
 ):
-    response = get_response(session, pep_url)
-    if response is None:
-        return
-    soup = BeautifulSoup(response.text, 'lxml')
     numerical_idx_tag = find_tag(
-        soup, 'section', attrs={'id': 'numerical-index'}
+        get_soup(session, pep_url), 'section', attrs={'id': 'numerical-index'}
     )
     tbody_tag = find_tag(numerical_idx_tag, 'tbody')
     tr_tags = tbody_tag.find_all('tr')
 
     results = {}
+    messages = []
     for tr in tqdm(tr_tags):
         status_key = find_tag(tr, 'td').text[1:]
         expected_status = EXPECTED_STATUS.get(status_key)
         if not expected_status:
             logging.info(UNKNOWN_STATUS.format(status_key=status_key))
         pep_link = urljoin(pep_url, find_tag(tr, 'a')['href'])
-        response = get_response(session, pep_link)
-        if response is None:
-            continue
-        soup = BeautifulSoup(response.text, 'lxml')
-        actual_status = find_tag(soup, text='Status').find_next('dd').text
+        actual_status = find_tag(
+            get_soup(session, pep_link), text='Status'
+        ).find_next('dd').text
         if actual_status not in expected_status:
-            logging.info(
+            messages.append(
                 STATUS_NOT_MATCH.format(
                     pep_link=pep_link,
                     actual_status=actual_status,
@@ -141,10 +140,14 @@ def pep(
                 )
             )
         results[actual_status] = results.get(actual_status, 0) + 1
+    for message in messages:
+        logging.info(message)
     results = list(results.items())
-    results.append(('Total', len(results)))
+    # results.append(('Total', len(results)))
     return (
-        [output_headers] + results
+        output_headers,
+        results,
+        ('Total', len(results))
     )
 
 
