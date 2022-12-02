@@ -3,24 +3,16 @@ import re
 from urllib.parse import urljoin
 
 import requests_cache
-from bs4 import BeautifulSoup
 from collections import defaultdict
 from tqdm import tqdm
 
 from configs import configure_argument_parser, configure_logging
-from constants import BASE_DIR, EXPECTED_STATUS, MAIN_DOC_URL, MAIN_PEP_URL
-from messages import (ARGS_INFO, DOWNLOAD_SUCCESS, EMPTY_RESPONSE_ERROR,
-                      LAST_FRONTIER_ERROR, NOTHING_FOUND, PARSER_FINISHED,
+from constants import BASE_DIR, DOWNLOAD_REL_PATH, DOWNLOAD_REL_URL, EXPECTED_STATUS, MAIN_DOC_URL, MAIN_PEP_URL
+from messages import (ARGS_INFO, DOWNLOAD_SUCCESS, LAST_FRONTIER_ERROR,
+                      NOTHING_FOUND, PARSER_FINISHED,
                       PARSER_STARTED, STATUS_NOT_MATCH, UNKNOWN_STATUS)
 from outputs import control_output
-from utils import find_tag, get_response
-
-
-def get_soup(session, url, features='lxml'):
-    response = get_response(session, url)
-    if response is None:
-        raise ValueError(EMPTY_RESPONSE_ERROR.format(url=url))
-    return BeautifulSoup(response.text, features)
+from utils import find_tag, get_response, get_soup
 
 
 def whats_new(
@@ -29,11 +21,10 @@ def whats_new(
     output_headers=('Ссылка на статью', 'Заголовок', 'Редактор, Автор')
 ):
     whats_new_url = urljoin(MAIN_DOC_URL, rel_url)
-    sections_by_python = get_soup(session, whats_new_url).select(
-        '#what-s-new-in-python div.toctree-wrapper:first-of-type li.toctree-l1'
-    )
     results = [output_headers]
-    for section in tqdm(sections_by_python):
+    for section in tqdm(get_soup(session, whats_new_url).select(
+        '#what-s-new-in-python div.toctree-wrapper:first-of-type li.toctree-l1'
+    )):
         version_a_tag = section.find('a')
         href = version_a_tag['href']
         version_link = urljoin(whats_new_url, href)
@@ -57,8 +48,7 @@ def latest_versions(
         'div',
         attrs={'class': 'sphinxsidebarwrapper'}
     )
-    ul_tags = sidebar.find_all('ul')
-    for ul in ul_tags:
+    for ul in sidebar.find_all('ul'):
         if 'All version' in ul.text:
             a_tags = ul.find_all('a')
             break
@@ -79,8 +69,8 @@ def latest_versions(
 
 def download(
     session,
-    rel_url='download.html',
-    rel_path='downloads'
+    rel_url=DOWNLOAD_REL_URL,
+    rel_path=DOWNLOAD_REL_PATH
 ):
     downloads_url = urljoin(MAIN_DOC_URL, rel_url)
     pdf_a4_tag = get_soup(session, downloads_url).select_one(
@@ -109,13 +99,15 @@ def pep(
     )
     tbody_tag = find_tag(numerical_idx_tag, 'tbody')
     tr_tags = tbody_tag.find_all('tr')
-    results = defaultdict(lambda: 0)
+    results = defaultdict(int)
     messages = []
     for tr in tqdm(tr_tags):
         status_key = find_tag(tr, 'td').text[1:]
         expected_status = EXPECTED_STATUS.get(status_key)
         if not expected_status:
-            logging.info(UNKNOWN_STATUS.format(status_key=status_key))
+            messages.append(
+                UNKNOWN_STATUS.format(status_key=status_key)
+            )
         pep_link = urljoin(pep_url, find_tag(tr, 'a')['href'])
         actual_status = find_tag(
             get_soup(session, pep_link), text='Status'
@@ -162,10 +154,9 @@ def main():
             control_output(results, args)
         logging.info(PARSER_FINISHED)
     except Exception as error:
-        error_message = LAST_FRONTIER_ERROR.format(
+        logging.exception(LAST_FRONTIER_ERROR.format(
             error=error
-        )
-        logging.exception(error_message)
+        ))
 
 
 if __name__ == '__main__':

@@ -1,14 +1,19 @@
 from pathlib import Path
 
+from src.messages import DOWNLOAD_URL_ERROR
+
 # Константы для работы с файловой системой
 BASE_DIR = Path(__file__).parent
+DOWNLOAD_REL_PATH = 'downloads'
 LOGS_DIR = 'logs'
 LOG_FILENAME = 'parser.log'
 DATETIME_FORMAT = '%Y-%m-%d_%H-%M-%S'
 LOG_DIR = BASE_DIR / LOGS_DIR
 LOG_FILE = LOG_DIR / LOG_FILENAME
+RESULT_DIR = 'results'
 
 # Константы для работы с сетевыми запросами
+DOWNLOAD_REL_URL = 'download.html'
 MAIN_DOC_URL = 'https://docs.python.org/3/'
 MAIN_PEP_URL = 'https://peps.python.org/'
 

@@ -1,3 +1,4 @@
+from bs4 import BeautifulSoup
 from requests import RequestException
 
 from exceptions import ParserFindTagException
@@ -10,7 +11,12 @@ def get_response(session, url):
         response.encoding = 'utf-8'
         return response
     except RequestException:
+        # raise Exception
         raise RequestException(DOWNLOAD_URL_ERROR.format(url=url))
+
+
+def get_soup(session, url, features='lxml'):
+    return BeautifulSoup(get_response(session, url).text, features)
 
 
 def find_tag(soup, tag=None, attrs=None, text=None):
