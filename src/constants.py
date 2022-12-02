@@ -1,6 +1,5 @@
+import logging
 from pathlib import Path
-
-from src.messages import DOWNLOAD_URL_ERROR
 
 # Константы для работы с файловой системой
 BASE_DIR = Path(__file__).parent
@@ -20,6 +19,11 @@ MAIN_PEP_URL = 'https://peps.python.org/'
 # Константы для настройки логирования
 LOG_DATETIME_FORMAT = '%d.%m.%Y %H:%M:%S'
 LOG_FORMAT = '"%(asctime)s - [%(levelname)s] - %(message)s"'
+LOGGER = {
+    'error': logging.error,
+    'info': logging.info
+}
+
 
 # Константы для настройки парсера
 EXPECTED_STATUS = {

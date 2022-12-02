@@ -11,8 +11,7 @@ def get_response(session, url):
         response.encoding = 'utf-8'
         return response
     except RequestException:
-        # raise Exception
-        raise RequestException(DOWNLOAD_URL_ERROR.format(url=url))
+        raise AttributeError(DOWNLOAD_URL_ERROR.format(url=url))
 
 
 def get_soup(session, url, features='lxml'):
